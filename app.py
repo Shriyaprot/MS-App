@@ -40,10 +40,7 @@ def process_uploaded_file(uploaded_file, custom_ranges=None):
         custom_ranges=custom_ranges
     )
 
-    original_name = extract_original_spectrum_name(
-        file_content,
-        fallback_name=uploaded_file.name
-    )
+    original_name = uploaded_file.name
 
     return (
         df,
@@ -132,150 +129,263 @@ def get_mz_bounds(uploaded_files):
 # -------------------------------------------------------
 # Paste spectrum section
 # -------------------------------------------------------
+# -------------------------------------------------------
+# Data input section
+# -------------------------------------------------------
 
-left, right = st.columns([2, 1])
+st.subheader("Spectrum Input")
 
-with left:
+input_mode = st.radio(
+    "Choose input type",
+    options=[
+        "Thermo RAW files",
+        "Converted TXT files"
+    ],
+    horizontal=True
+)
 
-    pasted_spectrum = st.text_area(
-        "Paste Mass Spectrometry Spectrum",
-        height=350,
-        placeholder=(
-            "Paste the complete spectrum export here, including:\n\n"
-            "SPECTRUM - MS\n"
-            "original_file.RAW\n"
-            "...\n"
-            "Mass    Intensity\n"
-            "12000.1    50.2\n"
-            "12002.4    103.8"
-        ),
-        help=(
-            "Paste the complete text copied from Qual Browser. "
-            "The app will detect the original RAW filename automatically."
-        )
+uploaded_files = []
+raw_files = []
+txt_files = []
+
+
+# -------------------------------------------------------
+# RAW FILE INPUT
+# -------------------------------------------------------
+
+if input_mode == "Thermo RAW files":
+
+    st.info(
+        "Upload one or more Thermo .RAW files. "
+        "The app will eventually extract the spectrum directly "
+        "and reproduce the validated TXT-style input internally."
     )
 
-    uploaded_files = []
-
-if pasted_spectrum.strip():
-
-    spectrum_blocks = split_pasted_spectra(
-        pasted_spectrum
+    raw_files = st.file_uploader(
+        "Upload Thermo RAW files",
+        type=["raw", "RAW"],
+        accept_multiple_files=True,
+        key="raw_file_uploader"
     )
 
-    for block in spectrum_blocks:
-
-        spectrum_file = PastedSpectrum(
-            block
-        )
-
-        uploaded_files.append(
-            spectrum_file
-        )
-
-    if uploaded_files:
+    if raw_files:
 
         st.success(
-            f"Detected {len(uploaded_files)} spectrum file(s)."
+            f"Detected {len(raw_files)} RAW file(s)."
         )
 
-        for i, spectrum_file in enumerate(
-            uploaded_files,
+        raw_table = []
+
+        for i, raw_file in enumerate(
+            raw_files,
             start=1
         ):
-            st.write(
-                f"**{i}.** {spectrum_file.name}"
+
+            raw_table.append(
+                {
+                    "No.": i,
+                    "Spectrum": raw_file.name,
+                    "Size (MB)": round(
+                        raw_file.size / (1024 * 1024),
+                        2
+                    ),
+                    "Status": "RAW extraction pending"
+                }
             )
 
+        st.dataframe(
+            pd.DataFrame(raw_table),
+            use_container_width=True,
+            hide_index=True
+        )
 
-with right:
 
-    validate_file = st.button(
-        "Validate Spectrum",
-        use_container_width=True
+# -------------------------------------------------------
+# TXT FILE INPUT
+# -------------------------------------------------------
+
+else:
+
+    st.info(
+        "Upload one or more previously converted two-column "
+        "m/z / intensity TXT files."
     )
 
-    file_status_box = st.empty()
+    txt_files = st.file_uploader(
+        "Upload converted TXT files",
+        type=["txt"],
+        accept_multiple_files=True,
+        key="txt_file_uploader"
+    )
 
+    if txt_files:
 
+        uploaded_files = txt_files
+
+        st.success(
+            f"Detected {len(txt_files)} TXT file(s)."
+        )
+
+        txt_table = []
+
+        for i, txt_file in enumerate(
+            txt_files,
+            start=1
+        ):
+
+            txt_table.append(
+                {
+                    "No.": i,
+                    "Spectrum": txt_file.name,
+                    "Size (KB)": round(
+                        txt_file.size / 1024,
+                        1
+                    )
+                }
+            )
+
+        st.dataframe(
+            pd.DataFrame(txt_table),
+            use_container_width=True,
+            hide_index=True
+        )
 # -------------------------------------------------------
-# File validation
+# Input validation
 # -------------------------------------------------------
+
+validate_file = st.button(
+    "Validate Spectra",
+    use_container_width=True
+)
+
+file_status_box = st.empty()
+
 
 if validate_file:
 
-    if not uploaded_files:
+    # ---------------------------------------------------
+    # RAW validation
+    # ---------------------------------------------------
 
-        file_status_box.error(
-            "No spectra detected. Make sure each spectrum begins "
-            "with 'SPECTRUM - MS'."
-        )
+    if input_mode == "Thermo RAW files":
 
-    else:
+        if not raw_files:
 
-        try:
+            file_status_box.error(
+                "Please upload at least one Thermo RAW file."
+            )
 
-            validation_rows = []
+        else:
 
-            all_mins = []
-            all_maxes = []
+            raw_validation_rows = []
 
-            for spectrum_file in uploaded_files:
+            for raw_file in raw_files:
 
-                df, _, _, original_name = process_uploaded_file(
-                    spectrum_file,
-                    custom_ranges=[]
-                )
-
-                mz_min_file = float(
-                    df["x"].min()
-                )
-
-                mz_max_file = float(
-                    df["x"].max()
-                )
-
-                all_mins.append(
-                    mz_min_file
-                )
-
-                all_maxes.append(
-                    mz_max_file
-                )
-
-                validation_rows.append(
+                raw_validation_rows.append(
                     {
-                        "Spectrum": original_name,
-                        "Data points": len(df),
-                        "Min m/z": mz_min_file,
-                        "Max m/z": mz_max_file
+                        "Spectrum": raw_file.name,
+                        "Size (MB)": round(
+                            raw_file.size / (1024 * 1024),
+                            2
+                        ),
+                        "RAW file": "Detected",
+                        "Spectrum extraction": "Pending"
                     }
                 )
 
-            mz_min = min(all_mins)
-            mz_max = max(all_maxes)
-
-            st.session_state["mz_bounds"] = (
-                mz_min,
-                mz_max
-            )
-
             st.session_state[
-                "validated_spectra"
-            ] = validation_rows
+                "validated_raw_files"
+            ] = raw_validation_rows
 
             file_status_box.success(
-                f"{len(uploaded_files)} spectrum file(s) validated successfully."
+                f"{len(raw_files)} RAW file(s) detected successfully."
             )
 
-        except Exception as exc:
+
+    # ---------------------------------------------------
+    # TXT validation
+    # ---------------------------------------------------
+
+    else:
+
+        if not txt_files:
 
             file_status_box.error(
-                f"Could not validate spectra: {exc}"
+                "Please upload at least one TXT file."
             )
-if "validated_spectra" in st.session_state:
 
-    st.subheader("Detected Spectra")
+        else:
+
+            try:
+
+                validation_rows = []
+
+                all_mins = []
+                all_maxes = []
+
+                for spectrum_file in txt_files:
+
+                    (
+                        df,
+                        _,
+                        _,
+                        original_name
+                    ) = process_uploaded_file(
+                        spectrum_file,
+                        custom_ranges=[]
+                    )
+
+                    mz_min_file = float(
+                        df["x"].min()
+                    )
+
+                    mz_max_file = float(
+                        df["x"].max()
+                    )
+
+                    all_mins.append(
+                        mz_min_file
+                    )
+
+                    all_maxes.append(
+                        mz_max_file
+                    )
+
+                    validation_rows.append(
+                        {
+                            "Spectrum": original_name,
+                            "Data points": len(df),
+                            "Min m/z": mz_min_file,
+                            "Max m/z": mz_max_file
+                        }
+                    )
+
+                st.session_state["mz_bounds"] = (
+                    min(all_mins),
+                    max(all_maxes)
+                )
+
+                st.session_state[
+                    "validated_spectra"
+                ] = validation_rows
+
+                file_status_box.success(
+                    f"{len(txt_files)} TXT spectrum file(s) "
+                    f"validated successfully."
+                )
+
+            except Exception as exc:
+
+                file_status_box.error(
+                    f"Could not validate spectra: {exc}"
+                )
+
+if (
+    input_mode == "Converted TXT files"
+    and "validated_spectra" in st.session_state
+):
+
+    st.subheader("Validated Spectra")
 
     validated_df = pd.DataFrame(
         st.session_state["validated_spectra"]
@@ -283,6 +393,24 @@ if "validated_spectra" in st.session_state:
 
     st.dataframe(
         validated_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+if (
+    input_mode == "Thermo RAW files"
+    and "validated_raw_files" in st.session_state
+):
+
+    st.subheader("Detected RAW Spectra")
+
+    raw_validated_df = pd.DataFrame(
+        st.session_state["validated_raw_files"]
+    )
+
+    st.dataframe(
+        raw_validated_df,
         use_container_width=True,
         hide_index=True
     )
@@ -456,7 +584,19 @@ with analyze_btn:
 
 validation_box = st.empty()
 
+def validate_ranges():
 
+    if input_mode == "Thermo RAW files":
+
+        return (
+            False,
+            "RAW spectrum extraction is not enabled yet. "
+            "We first need to validate RAW conversion against "
+            "the matched reference TXT."
+        )
+
+    if not uploaded_files:
+        return False, "No files uploaded"
 def validate_ranges():
     if not uploaded_files:
         return False, "No files uploaded"
