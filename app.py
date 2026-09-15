@@ -589,24 +589,20 @@ def validate_ranges():
     # RAW MODE
     if input_mode == "Thermo RAW files":
 
-        if not raw_files:
-            return False, "No RAW files uploaded"
-
-        return (
-            False,
-            "RAW file detected successfully. "
-            "Direct RAW spectrum extraction will be added next."
-        )
-
-    # TXT MODE
-    if not uploaded_files:
-        return False, "No TXT files uploaded"
+    if not raw_files:
+        return False, "No RAW files uploaded"
 
     if not custom_ranges:
         return False, (
             "Please fill in at least one complete range "
             "(x1, x2, name)"
         )
+
+    return (
+        True,
+        f"{len(raw_files)} RAW file(s) detected and "
+        f"{len(custom_ranges)} range(s) defined successfully."
+    )
 
     if not custom_ranges:
         return False, (
