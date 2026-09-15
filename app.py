@@ -368,12 +368,12 @@ if do_analyze:
                         "must be smaller than end."
                     )
 
-                zoom_range = (
+                                zoom_range = (
                     float(zoom_start),
                     float(zoom_end)
                 )
 
-                        file_results = []
+            file_results = []
             processed_data = {}
 
             for uploaded_file in uploaded_files:
