@@ -676,9 +676,17 @@ if do_analyze:
     if not ok:
         validation_box.error(message)
 
+    elif input_mode == "Thermo RAW files":
+
+        validation_box.warning(
+            "RAW files and ranges are valid. "
+            "Direct Thermo RAW spectrum extraction is the next step "
+            "and is not implemented yet."
+        )
+
     else:
         try:
-
+   
             if zoom_start is None and zoom_end is None:
                 zoom_range = None
 
