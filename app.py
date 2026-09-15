@@ -51,7 +51,21 @@ def process_uploaded_file(uploaded_file, custom_ranges=None):
         total_areas,
         original_name
     )
+class PastedSpectrum:
+    """
+    Makes pasted spectrum text behave like an uploaded file.
+    """
 
+    def __init__(self, text):
+        self._content = text.encode("utf-8")
+
+        self.name = extract_original_spectrum_name(
+            self._content,
+            fallback_name="pasted_spectrum.txt"
+        )
+
+    def getvalue(self):
+        return self._content
 def get_mz_bounds(uploaded_files):
     mins = []
     maxes = []
@@ -177,7 +191,51 @@ if "mz_bounds" in st.session_state:
 else:
     st.markdown("### No file loaded yet")
 
+# -------------------------------------------------------
+# Results
+# -------------------------------------------------------
 
+if "analysis_results" in st.session_state:
+
+    result_state = st.session_state["analysis_results"]
+
+    st.subheader("Results")
+
+    processed_data = result_state["processed_data"]
+
+    selected_file = st.selectbox(
+        "Spectrum to Show",
+        options=list(processed_data.keys())
+    )
+
+    df, results_df = processed_data[selected_file]
+
+    fig = plot_data_with_ranges(
+        df,
+        results_df,
+        result_state["custom_ranges"],
+        zoom_range=result_state["zoom_range"]
+    )
+
+    st.pyplot(fig)
+
+    st.dataframe(
+        result_state["summary_table"],
+        use_container_width=True
+    )
+
+    csv_data = (
+        result_state["summary_table"]
+        .to_csv(index=False)
+        .encode("utf-8")
+    )
+
+    st.download_button(
+        "Download Results (CSV)",
+        data=csv_data,
+        file_name="results.csv",
+        mime="text/csv"
+    )
 st.divider()
 
 # -------------------------------------------------------
