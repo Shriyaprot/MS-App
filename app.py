@@ -6,7 +6,8 @@ import pandas as pd
 from auc import (
     process_file,
     plot_data_with_ranges,
-    create_multi_file_summary
+    create_multi_file_summary,
+    extract_original_spectrum_name
 )
 
 MAX_RANGES = 10
@@ -30,14 +31,26 @@ def uploaded_file_to_bytes(uploaded_file):
 
 
 def process_uploaded_file(uploaded_file, custom_ranges=None):
-    file_content = uploaded_file_to_bytes(uploaded_file)
 
-    return process_file(
+    file_content = uploaded_file.getvalue()
+
+    df, results_df, total_areas = process_file(
         file_content=file_content,
         file_path=uploaded_file.name,
         custom_ranges=custom_ranges
     )
 
+    original_name = extract_original_spectrum_name(
+        file_content,
+        fallback_name=uploaded_file.name
+    )
+
+    return (
+        df,
+        results_df,
+        total_areas,
+        original_name
+    )
 
 def get_mz_bounds(uploaded_files):
     mins = []
