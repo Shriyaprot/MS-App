@@ -589,20 +589,24 @@ def validate_ranges():
     # RAW MODE
     if input_mode == "Thermo RAW files":
 
-    if not raw_files:
-        return False, "No RAW files uploaded"
+        if not raw_files:
+            return False, "No RAW files uploaded"
 
-    if not custom_ranges:
-        return False, (
-            "Please fill in at least one complete range "
-            "(x1, x2, name)"
+        if not custom_ranges:
+            return False, (
+                "Please fill in at least one complete range "
+                "(x1, x2, name)"
+            )
+
+        return (
+            True,
+            f"{len(raw_files)} RAW file(s) detected and "
+            f"{len(custom_ranges)} range(s) defined successfully."
         )
 
-    return (
-        True,
-        f"{len(raw_files)} RAW file(s) detected and "
-        f"{len(custom_ranges)} range(s) defined successfully."
-    )
+    # TXT MODE
+    if not uploaded_files:
+        return False, "No TXT files uploaded"
 
     if not custom_ranges:
         return False, (
@@ -650,15 +654,6 @@ def validate_ranges():
         f"All {len(custom_ranges)} ranges validated "
         f"successfully for {len(uploaded_files)} file(s)"
     )
-
-
-if do_validate_ranges:
-    ok, message = validate_ranges()
-
-    if ok:
-        validation_box.success(message)
-    else:
-        validation_box.error(message)
 
 
 # -------------------------------------------------------
