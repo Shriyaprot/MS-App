@@ -26,39 +26,135 @@ def calculate_area(df, x_start, x_end):
     return area if not np.isnan(area) else 0
 
 def read_data_file(file_content):
-    """Read mass spectrometry data from file content."""
+    """
+    Read either:
+
+    1. Plain two-column mass/intensity text:
+           12000.1    50
+           12002.4    100
+
+    2. Qual Browser / spectrum export containing metadata:
+           SPECTRUM - MS
+           original_file.RAW
+           ...
+           Mass    Intensity
+           12000.1    50
+           12002.4    100
+    """
+
     if isinstance(file_content, bytes):
-        file_content = file_content.decode('utf-8')
-    df = pd.read_csv(StringIO(file_content), delimiter=r'\s+', header=None, names=['x', 'y'])
-    df["x"] = pd.to_numeric(df["x"], errors="coerce")
-    df["y"] = pd.to_numeric(df["y"], errors="coerce")
-    df = df.dropna().sort_values("x")
+        file_content = file_content.decode("utf-8", errors="ignore")
+
+    lines = file_content.splitlines()
+
+    # --------------------------------------------------
+    # Look for "Mass Intensity" header
+    # --------------------------------------------------
+    data_start = None
+
+    for i, line in enumerate(lines):
+
+        clean = (
+            line.strip()
+            .lower()
+            .replace("\t", " ")
+            .replace(",", " ")
+        )
+
+        if "mass" in clean and "intensity" in clean:
+            data_start = i + 1
+            break
+
+    rows = []
+
+    # --------------------------------------------------
+    # If metadata header exists, read data below it
+    # Otherwise treat whole file as possible 2-column data
+    # --------------------------------------------------
+    if data_start is not None:
+        candidate_lines = lines[data_start:]
+    else:
+        candidate_lines = lines
+
+    for line in candidate_lines:
+
+        clean = (
+            line.strip()
+            .replace("\t", " ")
+            .replace(",", " ")
+        )
+
+        parts = clean.split()
+
+        if len(parts) < 2:
+            continue
+
+        try:
+            x = float(parts[0])
+            y = float(parts[1])
+
+            rows.append([x, y])
+
+        except ValueError:
+            continue
+
+    if not rows:
+        raise ValueError(
+            "Could not find numeric Mass / Intensity data."
+        )
+
+    df = pd.DataFrame(
+        rows,
+        columns=["x", "y"]
+    )
+
+    df["x"] = pd.to_numeric(
+        df["x"],
+        errors="coerce"
+    )
+
+    df["y"] = pd.to_numeric(
+        df["y"],
+        errors="coerce"
+    )
+
+    df = (
+        df
+        .dropna()
+        .sort_values("x")
+        .reset_index(drop=True)
+    )
+
     return df
+def extract_original_spectrum_name(file_content, fallback_name=None):
+    """
+    Extract the original .RAW spectrum filename from
+    the metadata section of an exported spectrum.
+    """
 
-def read_csv_file(file_content):
-    """Read exported mass spectrometry CSV file."""
     if isinstance(file_content, bytes):
-        file_content = file_content.decode('utf-8')
+        text = file_content.decode(
+            "utf-8",
+            errors="ignore"
+        )
+    else:
+        text = file_content
 
-    for skiprows in (8, 0):
-        for header in (None, 0):
-            try:
-                df = pd.read_csv(StringIO(file_content), sep=",", skiprows=skiprows, header=header)
-                if df.shape[1] < 2:
-                    continue
+    lines = text.splitlines()
 
-                df = df.iloc[:, :2].copy()
-                df.columns = ["x", "y"]
-                df["x"] = pd.to_numeric(df["x"], errors="coerce")
-                df["y"] = pd.to_numeric(df["y"], errors="coerce")
-                df = df.dropna().sort_values("x")
-                if len(df) > 0:
-                    return df
-            except Exception:
-                continue
+    # Search the beginning of the file for a RAW filename
+    for line in lines[:50]:
 
-    raise ValueError("Could not read CSV file. Please use two columns: m/z and intensity.")
+        clean = line.strip()
 
+        if ".raw" in clean.lower():
+
+            # In case the line contains a full path,
+            # keep only the filename
+            clean = clean.replace("\\", "/")
+            return clean.split("/")[-1]
+
+    return fallback_name
 def process_file(file_content=None, file_path=None, custom_ranges=None):
     """
     Process a single file and calculate all areas.
