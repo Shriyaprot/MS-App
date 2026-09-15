@@ -1,355 +1,498 @@
+import os
+import tempfile
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 
-from io import BytesIO
-from auc_engine import calculate_area
+from auc import (
+    process_file,
+    plot_data_with_ranges,
+    create_multi_file_summary
+)
 
+MAX_RANGES = 10
 
 st.set_page_config(
-    page_title="Mass Spec AUC Analyzer",
+    page_title="Mass Spectrometry AUC Analysis",
     layout="wide"
 )
 
-st.title("Mass Spectrometry AUC Analyzer")
+st.title("Mass Spectrometry Analysis")
+st.header("Area Under the Curve (AUC) Calculator")
 
 st.write(
-    "Upload Qual Browser exported mass spectra, define one or more m/z ranges, "
-    "calculate area under the curve, and export the results."
+    "Upload one or more mass spectrometry data files (.csv or .txt format) "
+    "to analyze and visualize the area under the curve for different m/z ranges."
 )
 
 
-def read_qual_browser_file(uploaded_file):
-    text = uploaded_file.getvalue().decode("utf-8", errors="ignore")
-    lines = text.splitlines()
+def uploaded_file_to_bytes(uploaded_file):
+    return uploaded_file.getvalue()
 
-    original_raw_name = uploaded_file.name
-    data_start = None
 
-    # Try to recover original RAW filename from the header
-    for line in lines[:20]:
-        if ".RAW" in line.upper():
-            original_raw_name = line.strip()
-            break
+def process_uploaded_file(uploaded_file, custom_ranges=None):
+    file_content = uploaded_file_to_bytes(uploaded_file)
 
-    # Find Mass / Intensity table
-    for i, line in enumerate(lines):
-        if "Mass" in line and "Intensity" in line:
-            data_start = i + 1
-            break
+    return process_file(
+        file_content=file_content,
+        file_path=uploaded_file.name,
+        custom_ranges=custom_ranges
+    )
 
-    if data_start is None:
-        raise ValueError(
-            "Could not find a 'Mass Intensity' table in this file."
+
+def get_mz_bounds(uploaded_files):
+    mins = []
+    maxes = []
+
+    for uploaded_file in uploaded_files:
+        df, _, _ = process_uploaded_file(
+            uploaded_file,
+            custom_ranges=[]
         )
 
-    rows = []
+        if df is None or len(df) == 0:
+            raise ValueError(
+                f"Could not extract m/z data from {uploaded_file.name}"
+            )
 
-    for line in lines[data_start:]:
-        parts = line.split()
+        mins.append(float(df["x"].min()))
+        maxes.append(float(df["x"].max()))
 
-        if len(parts) < 2:
-            continue
+    return min(mins), max(maxes)
 
+
+# -------------------------------------------------------
+# Upload section
+# -------------------------------------------------------
+
+left, right = st.columns([2, 1])
+
+with left:
+    uploaded_files = st.file_uploader(
+        "Upload Mass Spectrometry Data (.csv or .txt)",
+        type=["csv", "txt"],
+        accept_multiple_files=True
+    )
+
+with right:
+    validate_file = st.button(
+        "Validate File",
+        use_container_width=True
+    )
+
+    file_status_box = st.empty()
+
+
+# -------------------------------------------------------
+# File validation
+# -------------------------------------------------------
+
+if validate_file:
+
+    if not uploaded_files:
+        file_status_box.error("No files selected")
+
+    else:
         try:
-            mass = float(parts[0])
-            intensity = float(parts[1])
-            rows.append([mass, intensity])
-        except ValueError:
-            continue
+            mz_min, mz_max = get_mz_bounds(uploaded_files)
 
-    if not rows:
-        raise ValueError("No numeric mass/intensity data were found.")
+            names = ", ".join(
+                uploaded_file.name
+                for uploaded_file in uploaded_files
+            )
 
-    df = pd.DataFrame(rows, columns=["x", "y"])
-    df = df.dropna().sort_values("x")
+            file_status_box.success(
+                f"{len(uploaded_files)} file(s) valid\n\n"
+                f"Combined m/z range: {mz_min:.2f} - {mz_max:.2f}\n\n"
+                f"Files: {names}"
+            )
 
-    return df, original_raw_name
+            st.session_state["mz_bounds"] = (
+                mz_min,
+                mz_max
+            )
 
-
-def short_name(original_name):
-    """
-    Create a readable display name such as:
-    Liver_TG7_HCD160
-    """
-
-    lower = original_name.lower()
-
-    organ = "Sample"
-
-    for possible in [
-        "liver",
-        "lung",
-        "kidney",
-        "heart",
-        "brain"
-    ]:
-        if possible in lower:
-            organ = possible.capitalize()
-            break
-
-    trapgas = None
-    hcd = None
-
-    import re
-
-    tg_match = re.search(r"trapgas(\d+)", lower)
-    hcd_match = re.search(r"hcd(\d+)", lower)
-
-    if tg_match:
-        trapgas = tg_match.group(1)
-
-    if hcd_match:
-        hcd = hcd_match.group(1)
-
-    pieces = [organ]
-
-    if trapgas:
-        pieces.append(f"TG{trapgas}")
-
-    if hcd:
-        pieces.append(f"HCD{hcd}")
-
-    return "_".join(pieces)
+        except Exception as exc:
+            file_status_box.error(str(exc))
 
 
-uploaded_files = st.file_uploader(
-    "Upload exported spectra",
-    type=["txt", "csv"],
-    accept_multiple_files=True
-)
+if "mz_bounds" in st.session_state:
+    mz_min, mz_max = st.session_state["mz_bounds"]
+
+    st.markdown(
+        f"""
+### Combined Spectrum Bounds
+- **m/z min:** {mz_min:.2f}
+- **m/z max:** {mz_max:.2f}
+- **Range:** {mz_max - mz_min:.2f}
+"""
+    )
+
+else:
+    st.markdown("### No file loaded yet")
+
 
 st.divider()
 
-st.subheader("Define m/z ranges")
+# -------------------------------------------------------
+# Range definition
+# -------------------------------------------------------
 
-if "ranges" not in st.session_state:
-    st.session_state.ranges = [
-        {
-            "name": "Peak 1",
-            "start": 0.0,
-            "end": 0.0
-        }
-    ]
+st.subheader("Define m/z Ranges")
 
+range_count = st.selectbox(
+    "Number of Ranges",
+    options=list(range(1, MAX_RANGES + 1)),
+    index=0
+)
 
-for i, peak_range in enumerate(st.session_state.ranges):
+custom_ranges = []
 
-    col1, col2, col3 = st.columns(3)
+colors = [
+    "#1f77b4",
+    "#ff7f0e",
+    "#2ca02c",
+    "#d62728",
+    "#9467bd",
+    "#8c564b",
+    "#e377c2",
+    "#7f7f7f"
+]
 
-    with col1:
-        peak_range["name"] = st.text_input(
-            "Peak name",
-            value=peak_range["name"],
+for i in range(range_count):
+
+    st.markdown(f"#### Range {i + 1}")
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        x1 = st.number_input(
+            "x1 (start m/z)",
+            value=None,
+            placeholder="e.g., 3548.6",
+            key=f"x1_{i}"
+        )
+
+    with c2:
+        x2 = st.number_input(
+            "x2 (end m/z)",
+            value=None,
+            placeholder="e.g., 3552.1",
+            key=f"x2_{i}"
+        )
+
+    with c3:
+        name = st.text_input(
+            "Range Name",
+            placeholder="e.g., Protein-A1",
             key=f"name_{i}"
         )
 
-    with col2:
-        peak_range["start"] = st.number_input(
-            "Start m/z",
-            value=float(peak_range["start"]),
-            format="%.4f",
-            key=f"start_{i}"
-        )
-
-    with col3:
-        peak_range["end"] = st.number_input(
-            "End m/z",
-            value=float(peak_range["end"]),
-            format="%.4f",
-            key=f"end_{i}"
-        )
-
-
-col_add, col_remove = st.columns(2)
-
-with col_add:
-    if st.button("Add range"):
-        st.session_state.ranges.append(
+    if (
+        x1 is not None
+        and x2 is not None
+        and name.strip()
+    ):
+        custom_ranges.append(
             {
-                "name": f"Peak {len(st.session_state.ranges) + 1}",
-                "start": 0.0,
-                "end": 0.0
+                "name": name.strip(),
+                "range": (
+                    float(x1),
+                    float(x2)
+                ),
+                "color": colors[
+                    len(custom_ranges)
+                    % len(colors)
+                ]
             }
         )
-        st.rerun()
-
-with col_remove:
-    if (
-        st.button("Remove last range")
-        and len(st.session_state.ranges) > 1
-    ):
-        st.session_state.ranges.pop()
-        st.rerun()
 
 
 st.divider()
 
+# -------------------------------------------------------
+# Spectrum close-up
+# -------------------------------------------------------
 
-if uploaded_files:
+st.subheader("Spectrum Picture Close-Up")
 
-    st.subheader("Detected spectra")
+z1, z2 = st.columns(2)
 
-    preview_rows = []
+with z1:
+    zoom_start = st.number_input(
+        "Close-up start m/z",
+        value=None,
+        placeholder="Optional"
+    )
 
-    for uploaded_file in uploaded_files:
-        try:
-            df, original_name = read_qual_browser_file(uploaded_file)
+with z2:
+    zoom_end = st.number_input(
+        "Close-up end m/z",
+        value=None,
+        placeholder="Optional"
+    )
 
-            preview_rows.append({
-                "Uploaded file": uploaded_file.name,
-                "Original RAW file": original_name,
-                "Display name": short_name(original_name),
-                "Data points": len(df)
-            })
 
-        except Exception as exc:
-            preview_rows.append({
-                "Uploaded file": uploaded_file.name,
-                "Original RAW file": "",
-                "Display name": "",
-                "Data points": f"ERROR: {exc}"
-            })
+st.divider()
 
-    st.dataframe(
-        pd.DataFrame(preview_rows),
+# -------------------------------------------------------
+# Validation
+# -------------------------------------------------------
+
+validate_ranges_btn, analyze_btn = st.columns(2)
+
+with validate_ranges_btn:
+    do_validate_ranges = st.button(
+        "Validate Ranges",
+        use_container_width=True
+    )
+
+with analyze_btn:
+    do_analyze = st.button(
+        "Analyze Spectrum",
+        type="primary",
         use_container_width=True
     )
 
 
-if uploaded_files and st.button(
-    "Calculate AUC",
-    type="primary"
-):
+validation_box = st.empty()
 
-    all_results = []
 
-    for uploaded_file in uploaded_files:
+def validate_ranges():
+    if not uploaded_files:
+        return False, "No files uploaded"
 
-        try:
-            df, original_name = read_qual_browser_file(
-                uploaded_file
-            )
-
-        except Exception as exc:
-            st.error(
-                f"Could not read {uploaded_file.name}: {exc}"
-            )
-            continue
-
-        display_name = short_name(original_name)
-
-        st.subheader(display_name)
-        st.caption(original_name)
-
-        fig = go.Figure()
-
-        fig.add_trace(
-            go.Scatter(
-                x=df["x"],
-                y=df["y"],
-                mode="lines",
-                name="Spectrum",
-                line=dict(color="black")
-            )
+    if not custom_ranges:
+        return False, (
+            "Please fill in at least one complete range "
+            "(x1, x2, name)"
         )
 
-        for peak_range in st.session_state.ranges:
+    try:
+        mz_min, mz_max = get_mz_bounds(
+            uploaded_files
+        )
 
-            x_start = peak_range["start"]
-            x_end = peak_range["end"]
-            peak_name = peak_range["name"]
+    except Exception as exc:
+        return False, str(exc)
 
-            area = calculate_area(
-                df,
-                x_start,
-                x_end
+    for item in custom_ranges:
+        name = item["name"]
+        x1, x2 = item["range"]
+
+        if x1 >= x2:
+            return (
+                False,
+                f"Range '{name}': x1 ({x1}) "
+                f"must be less than x2 ({x2})"
             )
 
-            df_range = df[
-                (df["x"] >= x_start)
-                & (df["x"] <= x_end)
-            ]
+        if x1 < mz_min or x1 > mz_max:
+            return (
+                False,
+                f"Range '{name}': x1 ({x1}) "
+                f"is outside spectrum bounds "
+                f"({mz_min:.2f} - {mz_max:.2f})"
+            )
 
-            fig.add_trace(
-                go.Scatter(
-                    x=df_range["x"],
-                    y=df_range["y"],
-                    mode="lines",
-                    fill="tozeroy",
-                    name=peak_name
+        if x2 < mz_min or x2 > mz_max:
+            return (
+                False,
+                f"Range '{name}': x2 ({x2}) "
+                f"is outside spectrum bounds "
+                f"({mz_min:.2f} - {mz_max:.2f})"
+            )
+
+    return (
+        True,
+        f"All {len(custom_ranges)} ranges validated "
+        f"successfully for {len(uploaded_files)} file(s)"
+    )
+
+
+if do_validate_ranges:
+    ok, message = validate_ranges()
+
+    if ok:
+        validation_box.success(message)
+    else:
+        validation_box.error(message)
+
+
+# -------------------------------------------------------
+# Analysis
+# -------------------------------------------------------
+
+if do_analyze:
+
+    ok, message = validate_ranges()
+
+    if not ok:
+        validation_box.error(message)
+
+    else:
+        try:
+
+            if zoom_start is None and zoom_end is None:
+                zoom_range = None
+
+            elif (
+                zoom_start is None
+                or zoom_end is None
+            ):
+                raise ValueError(
+                    "Please fill both zoom start "
+                    "and zoom end, or leave both empty."
+                )
+
+            else:
+                if zoom_start >= zoom_end:
+                    raise ValueError(
+                        "Spectrum close-up start "
+                        "must be smaller than end."
+                    )
+
+                zoom_range = (
+                    float(zoom_start),
+                    float(zoom_end)
+                )
+
+            file_results = []
+            processed_data = {}
+
+            for uploaded_file in uploaded_files:
+
+                df, results_df, total_areas = (
+                    process_uploaded_file(
+                        uploaded_file,
+                        custom_ranges=custom_ranges
+                    )
+                )
+
+                file_results.append(
+                    {
+                        "file_name":
+                            uploaded_file.name,
+                        "results_df":
+                            results_df,
+                        "total_areas":
+                            total_areas
+                    }
+                )
+
+                processed_data[
+                    uploaded_file.name
+                ] = (
+                    df,
+                    results_df
+                )
+
+            summary_table = (
+                create_multi_file_summary(
+                    file_results
                 )
             )
 
-            all_results.append({
-                "Display Name": display_name,
-                "Original RAW File": original_name,
-                "Peak": peak_name,
-                "Start m/z": x_start,
-                "End m/z": x_end,
-                "AUC": area
-            })
+            st.session_state[
+                "analysis_results"
+            ] = {
+                "file_results":
+                    file_results,
+                "processed_data":
+                    processed_data,
+                "summary_table":
+                    summary_table,
+                "custom_ranges":
+                    custom_ranges,
+                "zoom_range":
+                    zoom_range
+            }
 
-        fig.update_layout(
-            xaxis_title="m/z",
-            yaxis_title="Intensity",
-            hovermode="x unified",
-            height=550
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    if all_results:
-
-        results_df = pd.DataFrame(all_results)
-
-        st.divider()
-        st.subheader("AUC Results")
-
-        st.dataframe(
-            results_df,
-            use_container_width=True
-        )
-
-        wide_df = results_df.pivot_table(
-            index=[
-                "Display Name",
-                "Original RAW File"
-            ],
-            columns="Peak",
-            values="AUC",
-            aggfunc="first"
-        ).reset_index()
-
-        output = BytesIO()
-
-        with pd.ExcelWriter(
-            output,
-            engine="openpyxl"
-        ) as writer:
-
-            results_df.to_excel(
-                writer,
-                sheet_name="AUC Results",
-                index=False
+            validation_box.success(
+                f"Successfully analyzed "
+                f"{len(uploaded_files)} file(s)\n\n"
+                f"Calculated "
+                f"{len(custom_ranges)} m/z ranges "
+                f"for each file"
             )
 
-            wide_df.to_excel(
-                writer,
-                sheet_name="Summary",
-                index=False
+        except Exception as exc:
+            validation_box.error(
+                f"Error processing file: {exc}"
             )
 
-        st.download_button(
-            "Download Excel Results",
-            data=output.getvalue(),
-            file_name="mass_spec_auc_results.xlsx",
-            mime=(
-                "application/"
-                "vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
-            )
+
+# -------------------------------------------------------
+# Results
+# -------------------------------------------------------
+
+if "analysis_results" in st.session_state:
+
+    result_state = (
+        st.session_state["analysis_results"]
+    )
+
+    st.subheader("Results")
+
+    processed_data = (
+        result_state["processed_data"]
+    )
+
+    selected_file = st.selectbox(
+        "Spectrum to Show",
+        options=list(
+            processed_data.keys()
         )
+    )
+
+    df, results_df = (
+        processed_data[selected_file]
+    )
+
+    fig = plot_data_with_ranges(
+        df,
+        results_df,
+        result_state["custom_ranges"],
+        zoom_range=result_state["zoom_range"]
+    )
+
+    st.pyplot(fig)
+
+    st.dataframe(
+        result_state["summary_table"],
+        use_container_width=True
+    )
+
+    csv_data = (
+        result_state["summary_table"]
+        .to_csv(index=False)
+        .encode("utf-8")
+    )
+
+    st.download_button(
+        "Download Results (CSV)",
+        data=csv_data,
+        file_name=(
+            "results_multiple_files.csv"
+            if len(processed_data) > 1
+            else "results.csv"
+        ),
+        mime="text/csv"
+    )
+
+
+st.divider()
+
+st.subheader("Instructions")
+
+st.markdown(
+    """
+1. **Upload Files**: Select one or more mass spectrometry files (.csv or .txt)
+2. **Validate Files**: Check that the files are valid and view combined m/z bounds
+3. **Define Ranges**: Choose how many ranges to add, then enter x1, x2 and a name
+4. **Spectrum Picture Close-Up**: Optionally enter the m/z start and end for the plot zoom
+5. **Validate Ranges**: Check that all ranges are valid
+6. **Analyze Spectrum**: Generate the plot and calculations
+7. **Choose Spectrum to Show**: Select which uploaded file should be displayed
+8. **Download**: Export results as CSV
+"""
+)
