@@ -142,7 +142,45 @@ with right:
 
     file_status_box = st.empty()
 
+def split_pasted_spectra(text):
+    """
+    Split one large clipboard paste into separate spectra.
 
+    Each spectrum is expected to begin with:
+        SPECTRUM - MS
+    """
+
+    lines = text.splitlines()
+
+    spectra_blocks = []
+    current_block = []
+
+    for line in lines:
+
+        if line.strip().upper() == "SPECTRUM - MS":
+
+            # Save the previous spectrum before starting a new one
+            if current_block:
+                block_text = "\n".join(current_block).strip()
+
+                if block_text:
+                    spectra_blocks.append(block_text)
+
+            current_block = [line]
+
+        else:
+            # Only collect lines after the first SPECTRUM - MS marker
+            if current_block:
+                current_block.append(line)
+
+    # Save final spectrum
+    if current_block:
+        block_text = "\n".join(current_block).strip()
+
+        if block_text:
+            spectra_blocks.append(block_text)
+
+    return spectra_blocks
 # -------------------------------------------------------
 # File validation
 # -------------------------------------------------------
@@ -150,47 +188,87 @@ with right:
 if validate_file:
 
     if not uploaded_files:
-        file_status_box.error("No files selected")
+
+        file_status_box.error(
+            "No spectra detected. Make sure each spectrum begins "
+            "with 'SPECTRUM - MS'."
+        )
 
     else:
+
         try:
-            mz_min, mz_max = get_mz_bounds(uploaded_files)
 
-            names = ", ".join(
-                uploaded_file.name
-                for uploaded_file in uploaded_files
-            )
+            validation_rows = []
 
-            file_status_box.success(
-                f"{len(uploaded_files)} file(s) valid\n\n"
-                f"Combined m/z range: {mz_min:.2f} - {mz_max:.2f}\n\n"
-                f"Files: {names}"
-            )
+            all_mins = []
+            all_maxes = []
+
+            for spectrum_file in uploaded_files:
+
+                df, _, _, original_name = process_uploaded_file(
+                    spectrum_file,
+                    custom_ranges=[]
+                )
+
+                mz_min_file = float(
+                    df["x"].min()
+                )
+
+                mz_max_file = float(
+                    df["x"].max()
+                )
+
+                all_mins.append(
+                    mz_min_file
+                )
+
+                all_maxes.append(
+                    mz_max_file
+                )
+
+                validation_rows.append(
+                    {
+                        "Spectrum": original_name,
+                        "Data points": len(df),
+                        "Min m/z": mz_min_file,
+                        "Max m/z": mz_max_file
+                    }
+                )
+
+            mz_min = min(all_mins)
+            mz_max = max(all_maxes)
 
             st.session_state["mz_bounds"] = (
                 mz_min,
                 mz_max
             )
 
+            st.session_state[
+                "validated_spectra"
+            ] = validation_rows
+
+            file_status_box.success(
+                f"{len(uploaded_files)} spectrum file(s) validated successfully."
+            )
+
         except Exception as exc:
-            file_status_box.error(str(exc))
 
+            file_status_box.error(
+                f"Could not validate spectra: {exc}"
+            )
+if "validated_spectra" in st.session_state:
 
-if "mz_bounds" in st.session_state:
-    mz_min, mz_max = st.session_state["mz_bounds"]
+    st.subheader("Detected Spectra")
 
-    st.markdown(
-        f"""
-### Combined Spectrum Bounds
-- **m/z min:** {mz_min:.2f}
-- **m/z max:** {mz_max:.2f}
-- **Range:** {mz_max - mz_min:.2f}
-"""
+    validated_df = pd.DataFrame(
+        st.session_state["validated_spectra"]
     )
 
-else:
-    st.markdown("### No file loaded yet")
-
+    st.dataframe(
+        validated_df,
+        use_container_width=True,
+        hide_index=True
+    )
 # -------------------------------------------------------
 # Results
 # -------------------------------------------------------
