@@ -586,20 +586,27 @@ validation_box = st.empty()
 
 def validate_ranges():
 
+    # RAW MODE
     if input_mode == "Thermo RAW files":
+
+        if not raw_files:
+            return False, "No RAW files uploaded"
 
         return (
             False,
-            "RAW spectrum extraction is not enabled yet. "
-            "We first need to validate RAW conversion against "
-            "the matched reference TXT."
+            "RAW file detected successfully. "
+            "Direct RAW spectrum extraction will be added next."
         )
 
+    # TXT MODE
     if not uploaded_files:
-        return False, "No files uploaded"
-def validate_ranges():
-    if not uploaded_files:
-        return False, "No files uploaded"
+        return False, "No TXT files uploaded"
+
+    if not custom_ranges:
+        return False, (
+            "Please fill in at least one complete range "
+            "(x1, x2, name)"
+        )
 
     if not custom_ranges:
         return False, (
