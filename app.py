@@ -57,7 +57,7 @@ def get_mz_bounds(uploaded_files):
     maxes = []
 
     for uploaded_file in uploaded_files:
-        df, _, _ = process_uploaded_file(
+       df, _, _, _ = process_uploaded_file(
             uploaded_file,
             custom_ranges=[]
         )
@@ -81,10 +81,14 @@ left, right = st.columns([2, 1])
 
 with left:
     uploaded_files = st.file_uploader(
-        "Upload Mass Spectrometry Data (.csv or .txt)",
-        type=["csv", "txt"],
-        accept_multiple_files=True
+    "Upload Mass Spectrometry Spectrum Exports",
+    type=None,
+    accept_multiple_files=True,
+    help=(
+        "Supports plain two-column spectra and "
+        "Qual Browser exported Mass/Intensity spectra."
     )
+)
 
 with right:
     validate_file = st.button(
@@ -374,17 +378,17 @@ if do_analyze:
 
             for uploaded_file in uploaded_files:
 
-                df, results_df, total_areas = (
-                    process_uploaded_file(
-                        uploaded_file,
-                        custom_ranges=custom_ranges
-                    )
-                )
+               df, results_df, total_areas, original_name = (
+    process_uploaded_file(
+        uploaded_file,
+        custom_ranges=custom_ranges
+    )
+)
 
                 file_results.append(
                     {
                         "file_name":
-                            uploaded_file.name,
+                            original_name,
                         "results_df":
                             results_df,
                         "total_areas":
@@ -393,11 +397,11 @@ if do_analyze:
                 )
 
                 processed_data[
-                    uploaded_file.name
-                ] = (
-                    df,
-                    results_df
-                )
+                    original_name
+] = (
+    df,
+    results_df
+)
 
             summary_table = (
                 create_multi_file_summary(
