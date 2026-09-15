@@ -349,26 +349,22 @@ if do_analyze:
     else:
         try:
 
-            if zoom_start is None and zoom_end is None:
+                        if zoom_start is None and zoom_end is None:
                 zoom_range = None
 
-            elif (
-                zoom_start is None
-                or zoom_end is None
-            ):
+            elif zoom_start is None or zoom_end is None:
                 raise ValueError(
-                    "Please fill both zoom start "
-                    "and zoom end, or leave both empty."
+                    "Please fill both zoom start and zoom end, "
+                    "or leave both empty."
                 )
 
             else:
                 if zoom_start >= zoom_end:
                     raise ValueError(
-                        "Spectrum close-up start "
-                        "must be smaller than end."
+                        "Spectrum close-up start must be smaller than end."
                     )
 
-                                zoom_range = (
+                zoom_range = (
                     float(zoom_start),
                     float(zoom_end)
                 )
@@ -437,59 +433,85 @@ if do_analyze:
 # Results
 # -------------------------------------------------------
 
-if "analysis_results" in st.session_state:
+if do_analyze:
 
-    result_state = (
-        st.session_state["analysis_results"]
-    )
+    ok, message = validate_ranges()
 
-    st.subheader("Results")
+    if not ok:
+        validation_box.error(message)
 
-    processed_data = (
-        result_state["processed_data"]
-    )
+    else:
+        try:
 
-    selected_file = st.selectbox(
-        "Spectrum to Show",
-        options=list(
-            processed_data.keys()
-        )
-    )
+            if zoom_start is None and zoom_end is None:
+                zoom_range = None
 
-    df, results_df = (
-        processed_data[selected_file]
-    )
+            elif zoom_start is None or zoom_end is None:
+                raise ValueError(
+                    "Please fill both zoom start and zoom end, "
+                    "or leave both empty."
+                )
 
-    fig = plot_data_with_ranges(
-        df,
-        results_df,
-        result_state["custom_ranges"],
-        zoom_range=result_state["zoom_range"]
-    )
+            else:
+                if zoom_start >= zoom_end:
+                    raise ValueError(
+                        "Spectrum close-up start must be smaller than end."
+                    )
 
-    st.pyplot(fig)
+                zoom_range = (
+                    float(zoom_start),
+                    float(zoom_end)
+                )
 
-    st.dataframe(
-        result_state["summary_table"],
-        use_container_width=True
-    )
+            file_results = []
+            processed_data = {}
 
-    csv_data = (
-        result_state["summary_table"]
-        .to_csv(index=False)
-        .encode("utf-8")
-    )
+            for uploaded_file in uploaded_files:
 
-    st.download_button(
-        "Download Results (CSV)",
-        data=csv_data,
-        file_name=(
-            "results_multiple_files.csv"
-            if len(processed_data) > 1
-            else "results.csv"
-        ),
-        mime="text/csv"
-    )
+                df, results_df, total_areas, original_name = (
+                    process_uploaded_file(
+                        uploaded_file,
+                        custom_ranges=custom_ranges
+                    )
+                )
+
+                file_results.append(
+                    {
+                        "file_name": original_name,
+                        "results_df": results_df,
+                        "total_areas": total_areas
+                    }
+                )
+
+                processed_data[original_name] = (
+                    df,
+                    results_df
+                )
+
+            summary_table = create_multi_file_summary(
+                file_results
+            )
+
+            st.session_state["analysis_results"] = {
+                "file_results": file_results,
+                "processed_data": processed_data,
+                "summary_table": summary_table,
+                "custom_ranges": custom_ranges,
+                "zoom_range": zoom_range
+            }
+
+            validation_box.success(
+                f"Successfully analyzed "
+                f"{len(uploaded_files)} file(s)\n\n"
+                f"Calculated "
+                f"{len(custom_ranges)} m/z ranges "
+                f"for each file"
+            )
+
+        except Exception as exc:
+            validation_box.error(
+                f"Error processing file: {exc}"
+            )
 
 
 st.divider()
