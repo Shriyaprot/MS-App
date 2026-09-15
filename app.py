@@ -66,6 +66,45 @@ class PastedSpectrum:
 
     def getvalue(self):
         return self._content
+def split_pasted_spectra(text):
+    """
+    Split one large clipboard paste into separate spectra.
+
+    Each spectrum is expected to begin with:
+        SPECTRUM - MS
+    """
+
+    lines = text.splitlines()
+
+    spectra_blocks = []
+    current_block = []
+
+    for line in lines:
+
+        if line.strip().upper() == "SPECTRUM - MS":
+
+            # Save the previous spectrum before starting a new one
+            if current_block:
+                block_text = "\n".join(current_block).strip()
+
+                if block_text:
+                    spectra_blocks.append(block_text)
+
+            current_block = [line]
+
+        else:
+            # Only collect lines after the first SPECTRUM - MS marker
+            if current_block:
+                current_block.append(line)
+
+    # Save final spectrum
+    if current_block:
+        block_text = "\n".join(current_block).strip()
+
+        if block_text:
+            spectra_blocks.append(block_text)
+
+    return spectra_blocks
 def get_mz_bounds(uploaded_files):
     mins = []
     maxes = []
@@ -118,19 +157,35 @@ with left:
 
     uploaded_files = []
 
-    if pasted_spectrum.strip():
+if pasted_spectrum.strip():
 
-        pasted_file = PastedSpectrum(
-            pasted_spectrum
+    spectrum_blocks = split_pasted_spectra(
+        pasted_spectrum
+    )
+
+    for block in spectrum_blocks:
+
+        spectrum_file = PastedSpectrum(
+            block
         )
 
-        uploaded_files = [
-            pasted_file
-        ]
+        uploaded_files.append(
+            spectrum_file
+        )
+
+    if uploaded_files:
 
         st.success(
-            f"Detected source spectrum: {pasted_file.name}"
+            f"Detected {len(uploaded_files)} spectrum file(s)."
         )
+
+        for i, spectrum_file in enumerate(
+            uploaded_files,
+            start=1
+        ):
+            st.write(
+                f"**{i}.** {spectrum_file.name}"
+            )
 
 
 with right:
@@ -142,45 +197,7 @@ with right:
 
     file_status_box = st.empty()
 
-def split_pasted_spectra(text):
-    """
-    Split one large clipboard paste into separate spectra.
 
-    Each spectrum is expected to begin with:
-        SPECTRUM - MS
-    """
-
-    lines = text.splitlines()
-
-    spectra_blocks = []
-    current_block = []
-
-    for line in lines:
-
-        if line.strip().upper() == "SPECTRUM - MS":
-
-            # Save the previous spectrum before starting a new one
-            if current_block:
-                block_text = "\n".join(current_block).strip()
-
-                if block_text:
-                    spectra_blocks.append(block_text)
-
-            current_block = [line]
-
-        else:
-            # Only collect lines after the first SPECTRUM - MS marker
-            if current_block:
-                current_block.append(line)
-
-    # Save final spectrum
-    if current_block:
-        block_text = "\n".join(current_block).strip()
-
-        if block_text:
-            spectra_blocks.append(block_text)
-
-    return spectra_blocks
 # -------------------------------------------------------
 # File validation
 # -------------------------------------------------------
