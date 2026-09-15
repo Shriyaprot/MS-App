@@ -57,7 +57,7 @@ def get_mz_bounds(uploaded_files):
     maxes = []
 
     for uploaded_file in uploaded_files:
-       df, _, _, _ = process_uploaded_file(
+        df, _, _, _ = process_uploaded_file(
             uploaded_file,
             custom_ranges=[]
         )
@@ -373,35 +373,30 @@ if do_analyze:
                     float(zoom_end)
                 )
 
-            file_results = []
+                        file_results = []
             processed_data = {}
 
             for uploaded_file in uploaded_files:
 
-               df, results_df, total_areas, original_name = (
-    process_uploaded_file(
-        uploaded_file,
-        custom_ranges=custom_ranges
-    )
-)
+                df, results_df, total_areas, original_name = (
+                    process_uploaded_file(
+                        uploaded_file,
+                        custom_ranges=custom_ranges
+                    )
+                )
 
                 file_results.append(
                     {
-                        "file_name":
-                            original_name,
-                        "results_df":
-                            results_df,
-                        "total_areas":
-                            total_areas
+                        "file_name": original_name,
+                        "results_df": results_df,
+                        "total_areas": total_areas
                     }
                 )
 
-                processed_data[
-                    original_name
-] = (
-    df,
-    results_df
-)
+                processed_data[original_name] = (
+                    df,
+                    results_df
+                )
 
             summary_table = (
                 create_multi_file_summary(
