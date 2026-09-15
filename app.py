@@ -76,23 +76,53 @@ def get_mz_bounds(uploaded_files):
 # -------------------------------------------------------
 # Upload section
 # -------------------------------------------------------
+# -------------------------------------------------------
+# Paste spectrum section
+# -------------------------------------------------------
 
 left, right = st.columns([2, 1])
 
 with left:
-    uploaded_files = st.file_uploader(
-    "Upload Mass Spectrometry Spectrum Exports",
-    type=None,
-    accept_multiple_files=True,
-    help=(
-        "Supports plain two-column spectra and "
-        "Qual Browser exported Mass/Intensity spectra."
+
+    pasted_spectrum = st.text_area(
+        "Paste Mass Spectrometry Spectrum",
+        height=350,
+        placeholder=(
+            "Paste the complete spectrum export here, including:\n\n"
+            "SPECTRUM - MS\n"
+            "original_file.RAW\n"
+            "...\n"
+            "Mass    Intensity\n"
+            "12000.1    50.2\n"
+            "12002.4    103.8"
+        ),
+        help=(
+            "Paste the complete text copied from Qual Browser. "
+            "The app will detect the original RAW filename automatically."
+        )
     )
-)
+
+    uploaded_files = []
+
+    if pasted_spectrum.strip():
+
+        pasted_file = PastedSpectrum(
+            pasted_spectrum
+        )
+
+        uploaded_files = [
+            pasted_file
+        ]
+
+        st.success(
+            f"Detected source spectrum: {pasted_file.name}"
+        )
+
 
 with right:
+
     validate_file = st.button(
-        "Validate File",
+        "Validate Spectrum",
         use_container_width=True
     )
 
