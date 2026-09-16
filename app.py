@@ -1091,21 +1091,64 @@ if (
     # PLOT
     # ===================================================
 
-    fig = plot_data_with_ranges(
-        df,
-        results_df,
+   fig = plot_data_with_ranges(
+    df,
+    results_df,
+    result_state[
+        "custom_ranges"
+    ],
+    zoom_range=
         result_state[
-            "custom_ranges"
-        ],
-        zoom_range=
-            result_state[
-                "zoom_range"
-            ]
+            "zoom_range"
+        ]
+)
+
+# Add original spectrum filename as title
+if fig.axes:
+
+    ax = fig.axes[0]
+
+    ax.set_title(
+        selected_file,
+        fontsize=11,
+        pad=15
     )
 
-    st.pyplot(
-        fig
-    )
+    fig.tight_layout()
+
+
+# Show graph in app
+st.pyplot(
+    fig
+)
+
+
+# Download graph as PDF
+graph_buffer = BytesIO()
+
+fig.savefig(
+    graph_buffer,
+    format="pdf",
+    bbox_inches="tight"
+)
+
+graph_buffer.seek(0)
+
+graph_file_name = (
+    selected_file
+    .replace(".RAW", "")
+    .replace(".raw", "")
+    .replace(".txt", "")
+    + "_spectrum.pdf"
+)
+
+st.download_button(
+    "Download Spectrum Graph (PDF)",
+    data=graph_buffer.getvalue(),
+    file_name=graph_file_name,
+    mime="application/pdf",
+    use_container_width=True
+)
 
 
     # ===================================================
